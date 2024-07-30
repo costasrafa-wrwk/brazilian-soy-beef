@@ -1,0 +1,229 @@
+---
+title: "Brazilian Beef and Soy Production Evolution (2002-2022)"
+author: "Rafael da Costa"
+date: "2024-07-30"
+output: 
+  html_document:
+    df_print: paged
+---
+
+```{r, error=FALSE, warning=FALSE, message=FALSE, echo = FALSE}
+##some settings
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE, echo = FALSE)
+```
+
+
+```{r}
+##Loading packages used
+library(tidyverse) 
+library(lubridate) 
+library(ggthemes) 
+library(viridis) 
+library(RColorBrewer) 
+library(sf) 
+library(geobr) 
+library(magick)
+```
+
+
+```{r}
+##importing soybean data
+soja_area_plantada_destinada_colheita_ha_2003_2022 <-  read.delim("PAM_soja_area_plantada_destinada_colheita_ha_2003_2022.csv",
+           header = TRUE, 
+           sep = ";", encoding = "UTF-8") %>%
+  separate(Município, c("Município", "Estado"), sep = "\\s*\\(") %>% 
+  rename(Municipio=Município) %>% 
+  mutate(Estado = str_remove(Estado, "\\s*\\)")) %>% 
+  pivot_longer(cols = c('X2003', 'X2004' , 'X2005', 'X2006', 'X2007',
+                        'X2008', 'X2009', 'X2010', 'X2011', 'X2012',
+                        'X2013', 'X2014', 'X2015', 'X2016', 'X2017',
+                        'X2018', 'X2019', 'X2020', 'X2021', 'X2022'),
+               names_to = "ano",
+               values_to = "area_plantada_colheita")%>% 
+  mutate(ano=as.numeric(str_remove(ano, "X")),
+         area_plantada_colheita= as.numeric(str_replace(area_plantada_colheita, "-", "0"))) %>% 
+  replace_na(list(area_plantada_colheita= 0L)) %>% 
+  drop_na() %>% 
+  select(-Nível)
+```
+
+
+```{r}
+#setting plots theme
+theme_set(theme_bw())
+```
+
+
+**Map 1**: Evolution of area planted or destined for soybean cultivation in Brazil according to the Municipal Agricultural Production Survey (2003-2022, PAM)
+```{r, include=FALSE}
+#loading Brazil spatial municipality data
+geobr_mun_2022 <- read_municipality(code_muni = "all", year = 2022, simplified = FALSE)
+
+## create a directory to which the images will be written
+dir_out <- file.path(tempdir(), "soy_beef_gif_map")
+dir.create(dir_out, recursive = TRUE)
+
+## get a sorted list of unique years in the TX housing dataset
+years <- 2003:2022
+
+## loop through years ...
+## subset data ...
+## create barplot of sales by month for each year ...
+## write plot to file
+for (y in years) {
+  
+  p <-
+  soja_area_plantada_destinada_colheita_ha_2003_2022 %>% 
+  filter(ano==y) %>% 
+  rename(code_muni=Cód.) %>% 
+  select(c(code_muni, area_plantada_colheita)) %>% 
+  left_join(geobr_mun_2022, by="code_muni") %>% 
+   st_sf() %>%
+  ggplot() +
+  geom_sf(aes(fill=area_plantada_colheita), color=NA, alpha=1)+
+  annotate("text", x=-73.5, y=7.5, label=as.character(y))+
+  theme_minimal()+
+  theme(axis.text.x =element_blank(), 
+        axis.text.y = element_blank(), 
+        axis.title.x = element_blank(), 
+        axis.title.y = element_blank())+
+  labs(fill="soybeans planted area\n in the municipality (ha)")+
+  scale_fill_viridis(
+    option = "inferno",
+    direction = -1,
+    na.value = "#000004FF",
+    breaks = c(0, 4000, 8000, 12000, 16000, 20000),
+    labels = c(0, 4000, 8000, 12000, 16000, "20000+"),
+    limits =c(0, 20000)
+  )
+  
+  fp <- file.path(dir_out, paste0(y, ".png"))
+  
+  ggsave(plot = p, 
+         filename = fp, 
+         device = "png")
+
+}
+
+## list file names and read in
+imgs <- list.files(dir_out, full.names = TRUE)
+img_list <- lapply(imgs, image_read)
+
+## join the images together
+img_joined <- image_join(img_list)
+
+## animate at 2 frames per second
+img_animated <- image_animate(img_joined, fps = 2)
+
+## save to disk
+image_write(image = img_animated,
+            path = "soy_BR.gif")
+
+rm(p)
+```
+
+```{r}
+## view animated image
+img_animated
+```
+
+
+```{r}
+## Cleaning
+rm(img_animated)
+```
+
+
+```{r}
+## importing beef data
+ppm_bovinos <- read.delim("ppm_bovinos.csv",
+           header = TRUE, 
+           sep = ";", encoding = "UTF-8") %>%
+  separate(Município, c("Município", "Estado"), sep = "\\s*\\(") %>% 
+  rename(Municipio=Município) %>% 
+  mutate(Estado = str_remove(Estado, "\\s*\\)")) %>% 
+  pivot_longer(cols = c('X2003', 'X2004' , 'X2005', 'X2006', 'X2007',
+                        'X2008', 'X2009', 'X2010', 'X2011', 'X2012',
+                        'X2013', 'X2014', 'X2015', 'X2016', 'X2017',
+                        'X2018', 'X2019', 'X2020', 'X2021', 'X2022'),
+               names_to = "ano",
+               values_to = "n_bovinos") %>% 
+  mutate(ano=as.numeric(str_remove(ano, "X")),
+         n_bovinos= as.numeric(str_replace(n_bovinos, "\\...", "0"))) %>% 
+  replace_na(list(n_bovinos = 0L)) %>% 
+  select(-Nível)
+```
+
+
+```{r, include=FALSE}
+#loading Brazil spatial municipality data
+geobr_mun_2022 <- read_municipality(code_muni = "all", year = 2022, simplified = FALSE)
+
+## create a directory to which the images will be written
+dir_out <- file.path(tempdir(), "soy_beef_gif_map")
+dir.create(dir_out, recursive = TRUE)
+
+## get a sorted list of unique years in the TX housing dataset
+years <- 2003:2022
+
+## loop through years ...
+## subset data ...
+## create barplot of sales by month for each year ...
+## write plot to file
+for (y in years) {
+  
+  p <-
+    ppm_bovinos %>% 
+  filter(ano==y) %>% 
+  rename(code_muni=Cód.) %>% 
+  select(c(code_muni, n_bovinos)) %>% 
+  left_join(geobr_mun_2022, by="code_muni") %>% 
+   st_sf() %>%
+  ggplot() +
+  geom_sf(aes(fill=n_bovinos), color=NA, alpha=1)+
+  annotate("text", x=-73.5, y=7.5, label=as.character(y))+
+  theme_minimal()+
+  theme(axis.text.x =element_blank(), 
+        axis.text.y = element_blank(), 
+        axis.title.x = element_blank(), 
+        axis.title.y = element_blank())+
+  labs(fill="n. of cattle in the municipality")+
+  scale_fill_viridis(
+    option = "inferno",
+    direction = -1,
+    na.value = "#000004FF",
+    breaks = c(0, 100000, 200000, 300000, 400000, 500000),
+    labels = c("0", "50000", "100000", "150000", "200000", "500000+"),
+    limits =c(0, 500000)
+  )
+  
+  fp <- file.path(dir_out, paste0(y, ".png"))
+  
+  ggsave(plot = p, 
+         filename = fp, 
+         device = "png")
+
+}
+
+## list file names and read in
+imgs <- list.files(dir_out, full.names = TRUE)
+img_list <- lapply(imgs, image_read)
+
+## join the images together
+img_joined <- image_join(img_list)
+
+## animate at 2 frames per second
+img_animated <- image_animate(img_joined, fps = 2)
+
+## save to disk
+image_write(image = img_animated,
+            path = "beef_BR.gif")
+```
+
+
+**Map 2**:Evolution of the number of heads of beef cattle per Brazilian municipality according to the Municipal Livestock Survey (2003-2022)
+```{r}
+## view animated image
+img_animated
+```
+
